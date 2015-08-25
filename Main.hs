@@ -125,11 +125,17 @@ playTurn = do
             gsCurrentPlayer %= nextPlayer
 
 gameOver :: Piece -> StateT GameState IO ()
-gameOver winner = liftIO . putStrLn $ "The game is over! " ++ (show winner) ++ " wins!"
+gameOver winner = do
+    finalBoard <- use gsBoard
+    liftIO $ do
+        putStrLn ""
+        printBoard finalBoard
+        putStrLn $ "The game is over! " ++ (show winner) ++ " wins!"
 
 mainLoop :: StateT GameState IO ()
 mainLoop = do
     board <- use gsBoard
+    liftIO $ putStrLn ""
     liftIO $ printBoard board
     printTurn
     playTurn
