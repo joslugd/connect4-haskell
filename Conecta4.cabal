@@ -22,7 +22,6 @@ executable Conecta4
   build-depends:       base   >=4.8 && <4.9,
                        safe   ==0.3.9,
                        vector ==0.11.0.0,
-                       matrix ==0.3.4.4,
                        lens   ==4.12.3,
                        random, mtl
   -- hs-source-dirs:      
