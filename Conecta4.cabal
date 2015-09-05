@@ -17,6 +17,7 @@ cabal-version:       >=1.10
 
 executable Conecta4
   main-is:             Main.hs
+  Hs-Source-Dirs:      src
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base   >=4.8 && <4.9,

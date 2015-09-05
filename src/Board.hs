@@ -1,20 +1,21 @@
-{-# LANGUAGE TemplateHaskell #-}
 
-{- Conect4 implementation in Haskell.
- - NOTE: I know the comments in this file are a bit much extense. This has been
- - on purpose, so in case someone stumbles upon this source code and wants
- - to learn Haskell, they can somewhat understand what is going on (while
- - helping myself remember the concepts I have learned about Haskell).
--}
+module Board
+(
+    Piece (..),
+    nextPlayer,
+    Square, Row, Board,
+    boardRows, boardCols,
+    emptyBoard, rowIdx, colIdx,
+    isCoordValid, putPiece, fourInARow,
+    checkWinner, isFull, printRow, printBoard
+) where
 
-import Control.Lens
 import Control.Monad (join, guard)
-import Control.Monad.State
+import Data.List (find)
 import Data.Vector ((//), (!), (!?))
 import qualified Data.Vector as V
 import Data.Maybe (isNothing, isJust)
-import Data.List (group, find)
-import Safe (headMay, lastMay, readMay)
+import Safe (lastMay)
 import System.Random
 
 -- |The 'Piece' data structure represents both the pieces in the board
@@ -139,7 +140,7 @@ extractDiagonals board =
         -- Convert coordinates to squares from the board
         rowList = (map . map) (uncurry $ rowIdx board) coords
     in  -- Convert list of lists to vector of vectors.
-        V.fromList (map V.fromList $ rowList)
+        V.fromList (map V.fromList rowList)
     where genDiagDCoords = -- Generate coords for \ diagonals.
             map (takeWhile isCoordValid . iterate (dMap (succ, pred)))
                 (topCoords ++ leftCoords)
@@ -179,100 +180,3 @@ printRow row = -- Map the monadic action of "printing" to each square of the
 printBoard :: Board -> IO ()
 printBoard = V.mapM_ printRow
 
--- Game input/output functions
--- |Represents the state of the program at a particular time.
-data GameState = GameState { _gsBoard :: Board, _gsStdGen :: StdGen,
-                             _gsCurrentPlayer :: Piece }
--- Construct the lenses for the previously defined data structure. In layman
--- terms, lenses are abstractions used in functional programming to simulate
--- getters and setters in a composable, functional and convenient way. The
--- following line makes use of the "TemplateHaskell" extension, which acts
--- like some kind of preprocessor, thus generating the code for the lenses at
--- compile time (as opposed to at runtime). This way we can use the lenses
--- like any other defined object in the rest of our program.
--- The created lenses will have the same name as the corresponding field,
--- but without the leading underscore.
-makeLenses ''GameState
-
--- |Reads a column number from stdin.
-readCol :: IO (Maybe Int)
-readCol = getLine >>= return . readMay
-
--- |Prints whose turn is it.
-printTurn :: StateT GameState IO ()
-printTurn = do
-    cur <- use gsCurrentPlayer
-    liftIO . putStrLn $ "It is the turn for " ++ (show cur)
-
--- |Play a turn for a given player (i.e: read column and place piece).
-playTurn :: StateT GameState IO ()
-playTurn = do
-    liftIO . putStrLn $ "Enter a valid column number (0.." ++ (show $ boardCols-1)
-                                                           ++ ")"
-    -- The 'lens' package provides some functions analogous to the ones defined
-    -- in the state monad. For example: 'use' is like 'gets', but the former
-    -- lets us use a lens as a getter, while the later needs a explicit
-    -- function over the state.
-    currentPlayer <- use gsCurrentPlayer
-    curBoard <- use gsBoard
-
-    -- Read column.
-    mcol <- liftIO readCol
-    -- Nested do block. Needed because we have to run several actions
-    -- corresponding to the Maybe monad and not to the external one (StateT).
-    -- Here, we check the existence of the column and thst the resulting board
-    -- is valid (returning the resulting board if that's the case, or Nothing
-    -- otherwise).
-    let mboard = do
-            acol <- mcol
-            putPiece currentPlayer acol curBoard
-    -- Check validity of the board, returning it if it's valid, or asking
-    -- again for the column if it's not the case.
-    verifyBoard mboard
-    where verifyBoard Nothing = playTurn  -- If board is not valid, ask again
-          verifyBoard (Just newBoard) = do
-            assign gsBoard newBoard
-            gsCurrentPlayer %= nextPlayer
-
--- |Function called when the game ends. Prints final board and winner.
-gameOver :: Maybe Piece -> StateT GameState IO ()
-gameOver winner = do
-    finalBoard <- use gsBoard
-    liftIO $ do
-        putStrLn ""
-        printBoard finalBoard
-        putStrLn $ "The game is over! " ++
-            (maybe "Tie!" (\w -> (show w) ++ " wins!") winner)
-
--- |Data type that represents the state of a match.
-data MatchState = NotEnd | Win Piece | Tie
-checkEnd :: StateT GameState IO MatchState
-checkEnd = do
-    board <- use gsBoard
-    return $ case checkWinner board of
-        Nothing     -> if isFull board then Tie else NotEnd
-        Just winner -> Win winner
-
--- |Loop of the game. This function repeats itself until there is a winner
--- (or no more plays are possible).
-mainLoop :: StateT GameState IO ()
-mainLoop = do
-    board <- use gsBoard
-    liftIO $ putStrLn ""
-    liftIO $ printBoard board
-    printTurn
-    playTurn
-    matchSt <- checkEnd
-    case matchSt of
-        NotEnd -> mainLoop
-        Win w  -> gameOver $ Just w
-        Tie    -> gameOver Nothing
-
--- |Main function, entry point to the application.
-main :: IO ()
-main = do
-    stdGen <- getStdGen
-    let (initialPlayer, newGen) = random stdGen
-        initialState = GameState emptyBoard newGen initialPlayer
-    mainLoop `runStateT` initialState
-    return ()
