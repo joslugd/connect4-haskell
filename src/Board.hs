@@ -6,7 +6,8 @@ module Board
     Square, Row, Board,
     boardRows, boardCols,
     emptyBoard, rowIdx, colIdx,
-    isCoordValid, putPiece, fourInARow,
+    isCoordValid, putPiece,
+    extractCols, extractDiagonals,
     checkWinner, isFull, printRow, printBoard
 ) where
 
