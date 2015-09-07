@@ -152,7 +152,7 @@ extractDiagonals board =
     in  -- Convert list of lists to vector of vectors.
         V.fromList (map V.fromList rowList)
     where genDiagDCoords = -- Generate coords for \ diagonals.
-            map (takeWhile isCoordValid . iterate (dMap (succ, pred)))
+            map (takeWhile isCoordValid . iterate (dMap (succ, succ)))
                 (topCoords ++ leftCoords)
           genDiagUCoords = -- Generate coords for / diagonals.
             map (takeWhile isCoordValid . iterate (dMap (pred, succ)))
