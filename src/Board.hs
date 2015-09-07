@@ -2,11 +2,12 @@
 module Board
 (
     Piece (..),
+    Player,
     nextPlayer,
     Square, Row, Board,
     boardRows, boardCols,
     emptyBoard, rowIdx, colIdx,
-    isCoordValid, putPiece,
+    isCoordValid, canPlaceInCol, putPiece,
     extractCols, extractDiagonals,
     checkWinner, isFull, printRow, printBoard
 ) where
@@ -22,8 +23,10 @@ import System.Random
 -- |The 'Piece' data structure represents both the pieces in the board
 -- and the players themselves as X and O.
 data Piece = X | O deriving (Show, Eq)
+-- |Type synonym for the above data structure, for readability purposes.
+type Player = Piece
 -- |Returns the next player that plays after another given as an argument.
-nextPlayer :: Piece -> Piece
+nextPlayer :: Player -> Player
 nextPlayer O = X
 nextPlayer X = O
 
@@ -72,7 +75,13 @@ colIdx board = flip $ rowIdx board
 -- |Checks if row/col combination is valid (i.e: whether it's within the bounds
 -- of the board).
 isCoordValid :: (Int, Int) -> Bool
-isCoordValid (row, col) = row >= 0 && row < boardRows && col >= 0 && col < boardCols
+isCoordValid (row, col) = row >= 0 && row < boardRows
+                       && col >= 0 && col < boardCols
+
+-- |Checks if a piece can be placed in a given column of a board.
+canPlaceInCol :: Board -> Int -> Bool
+canPlaceInCol b col = -- Check whether the first row has a piece in the column.
+    isNothing $ rowIdx b 0 col
 
 -- Board transform functions
 -- |Try to place a piece in a column of the board. If the column is not valid
@@ -113,7 +122,7 @@ putPiece piece col board = do
                            [0..boardRows-1]
 
 -- |Search for four pieces of the same kind in a row in a vector of squares.
-fourInARow :: V.Vector Square -> Maybe Piece
+fourInARow :: V.Vector Square -> Maybe Player
 fourInARow = -- Easier to convert to list so we can use pattern-matching.
              join . checkFour . V.toList
     where checkFour (x:y:z:t:l) | all isJust [x, y, z, t] && x == y
@@ -158,7 +167,7 @@ extractDiagonals board =
           dMap (f, g) (x, y) = (f x, g y)
 
 -- |Return the winner of a game by looking at the board.
-checkWinner :: Board -> Maybe Piece
+checkWinner :: Board -> Maybe Player
 checkWinner b = -- Checks for four in a row in rows, columns and diagonals.
                 -- "join" merges two nested redundant monads into one.
                 -- In this case, converts Maybe (Maybe Piece) into Maybe Piece.

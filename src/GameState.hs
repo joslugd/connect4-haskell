@@ -29,7 +29,7 @@ runStrategy = runReaderT
 
 -- |Represents the state of the program at a particular time.
 data GameState = GameState { _gsBoard :: Board, _gsStdGen :: StdGen,
-                             _gsCurrentPlayer :: Piece,
+                             _gsCurrentPlayer :: Player,
                              _gsPlayer1Strat :: GameStrategy, 
                              _gsPlayer2Strat :: GameStrategy }
 -- Construct the lenses for the previously defined data structure. In layman

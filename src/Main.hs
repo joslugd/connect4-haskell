@@ -14,6 +14,7 @@ import Safe (readMay)
 import Board
 import GameState
 import Strategy.Human
+import Strategy.Computer
 
 -- |Data type that represents the state of a match.
 data MatchState = NotEnd | Win Piece | Tie
@@ -30,7 +31,7 @@ player1Strat = humanStrategy
 
 -- |Define player 2 strategy.
 player2Strat :: GameStrategy
-player2Strat = humanStrategy
+player2Strat = computerStrategy
 
 -- |Prints whose turn is it.
 printTurn :: GameMonad ()

@@ -1,3 +1,7 @@
+{-
+ - This file defines the strategy for a human player. This strategy consists
+ - simply in reading the column number from the keyboard.
+ - -}
 
 module Strategy.Human
 (
@@ -23,12 +27,12 @@ humanStrategy = do
     -- in the reader monad. For example: 'view' is like 'asks', but the former
     -- lets us use a lens as a getter, while the later needs a explicit
     -- function over the state.
-    currentPlayer <- view gsCurrentPlayer
     curBoard <- view gsBoard
 
     -- Read column.
     mcol <- liftIO readCol
 
+    -- Check that the input is correct. If it is not, ask again.
     validateCol mcol
     where validateCol (Just col) = return col
           validateCol Nothing    = humanStrategy
