@@ -186,7 +186,11 @@ printRow row = -- Map the monadic action of "printing" to each square of the
                -- row. Then print a new line.
                V.mapM_ (putChar . maybe '.' (head . show)) row >> putStrLn ""
 
--- |Prints a board to stdout.
+-- |Prints a board to stdout. Also print a helper row with the column numbers so
+-- they will be easier to choose.
 printBoard :: Board -> IO ()
-printBoard = V.mapM_ printRow
+printBoard board = do
+    mapM_ (putStr . show) [0..boardCols-1]
+    putStrLn ""
+    V.mapM_ printRow board
 
