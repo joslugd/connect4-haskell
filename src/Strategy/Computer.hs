@@ -9,6 +9,7 @@ module Strategy.Computer
 
 import Control.Lens (view)
 import Control.Monad (join)
+import Data.Function (on)
 import Data.List (maximumBy)
 import Data.Maybe (mapMaybe)
 import qualified Data.Vector as V
@@ -111,7 +112,7 @@ computerStrategy = do
     -- For each column, we try putting a piece (we discard invalid movements
     -- thanks to the 'mapMaybe' function), and then get the column for which
     -- we got the maximum rating.
-    return . mvColumn . maximumBy ratingComparison .
+    return . mvColumn . maximumBy (compare `on` mvRating) .
         mapMaybe (move player curBoard) $ [0..boardCols-1]
     where -- Creates the 'Move' data structure for a given column.
           move player board col = 
@@ -119,9 +120,6 @@ computerStrategy = do
                 Nothing -> Nothing
                 Just resultBoard -> Just $ Move col resultBoard
                     (evaluate player playerCoef opponentCoef resultBoard)
-          -- Comparison function for use in 'maximumBy'
-          ratingComparison move1 move2 = compare (mvRating move1)
-                                                 (mvRating move2)
           -- Coefficients for the linear combination of winning rows. We
           -- temporarily use a greater weight for the opponent's so we can get
           -- a more aggresive AI that doesn't lose so easily. This may change
