@@ -4,6 +4,7 @@ module Board
     Piece (..),
     Player,
     nextPlayer,
+    toColor,
     Square, Row, Board,
     boardRows, boardCols,
     emptyBoard, rowIdx, colIdx,
@@ -30,6 +31,11 @@ nextPlayer :: Player -> Player
 nextPlayer O = X
 nextPlayer X = O
 
+-- |Returns the color associated with each player.
+toColor :: Player -> String
+toColor X = "red"
+toColor O = "yellow"
+
 -- |Instance declaration of Piece for the Random typeclass. This makes possible
 -- the random generation of pieces using the functions in the System.Random
 -- module.
@@ -50,11 +56,11 @@ type Row = V.Vector Square
 type Board = V.Vector Row
 
 -- |Constant representing the number of rows in the board.
-boardRows :: Int
+boardRows :: Num a => a
 boardRows = 6
 
 -- |Constant representing the number of columns in the board.
-boardCols :: Int
+boardCols :: Num a => a
 boardCols = 7
 
 -- |The empty board (no pieces).

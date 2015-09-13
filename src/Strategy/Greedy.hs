@@ -2,7 +2,7 @@
  - This file defines the strategy for a player controller by the computer.
  - -}
 
-module Strategy.Computer
+module Strategy.Greedy
 (
     computerStrategy
 ) where
