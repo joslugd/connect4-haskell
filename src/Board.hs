@@ -5,12 +5,12 @@ module Board
     Player,
     nextPlayer,
     toColor,
-    Square, Row, Board,
+    Square, Row, Board, MatchState(..),
     boardRows, boardCols,
     emptyBoard, rowIdx, colIdx,
     isCoordValid, canPlaceInCol, putPiece,
     extractCols, extractDiagonals,
-    checkWinner, isFull, printRow, printBoard
+    getMatchState, isFull, printRow, printBoard
 ) where
 
 import Control.Monad (join, guard)
@@ -54,6 +54,9 @@ type Row = V.Vector Square
 
 -- |The board is represented as a list of rows.
 type Board = V.Vector Row
+
+-- |Data type that represents the state of a match.
+data MatchState = NotEnd | Win Piece | Tie
 
 -- |Constant representing the number of rows in the board.
 boardRows :: Num a => a
@@ -179,6 +182,13 @@ checkWinner b = -- Checks for four in a row in rows, columns and diagonals.
                 -- In this case, converts Maybe (Maybe Piece) into Maybe Piece.
                 join . find isJust . V.map fourInARow $
                 V.concat [b, extractCols b, extractDiagonals b]
+
+-- |Returns the state of the match between two players.
+getMatchState :: Board -> MatchState
+getMatchState board =
+    case checkWinner board of
+        Nothing     -> if isFull board then Tie else NotEnd
+        Just winner -> Win winner
 
 -- |Checks if the board is full (thus no more plays are possible).
 isFull :: Board -> Bool

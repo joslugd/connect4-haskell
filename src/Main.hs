@@ -20,13 +20,10 @@ import GameState
 import qualified UI.Graphics as UI
 import Strategy.Greedy
 
--- |Data type that represents the state of a match.
-data MatchState = NotEnd | Win Piece | Tie
-
 -- |Type alias for the state monad used in this file.
 -- We will be using the state monad transformer so we can have a mutable game
 -- state as well as we can use the capabilities of the IO monad (access to the
--- real world, i.e: reading from stdin and outputting to stdout) 
+-- real world, i.e: reading from stdin and outputting to stdout)
 -- Update: Also we add the "ReaderT" transformer so we can access the
 -- GraphicsHandler.
 type GameMonad = ReaderT UI.GraphicsHandle (StateT GameState IO)
@@ -34,7 +31,7 @@ type GameMonad = ReaderT UI.GraphicsHandle (StateT GameState IO)
 -- |The 'runGame' function evaluates the whole stack of a GameMonad monad.
 -- We pass it the reader configuration and the initial state.
 runGame :: GameMonad a -> UI.GraphicsHandle -> GameState -> IO a
-runGame gm uiHandle initState = 
+runGame gm uiHandle initState =
     (gm `runReaderT` uiHandle) `evalStateT` initState
 
 -- |Returns the strategy for the given player ('Nothing' = human controlled).
@@ -45,13 +42,15 @@ playerStrategy pl = pick strategies
           -- Define player strategies.
           strategies = (Nothing, Just computerStrategy)
 
+-- |Reads player input using a 'GameStrategy' or reading from the user.
 playerInput :: GameState -> Maybe GameStrategy -> GameMonad (Maybe Int)
-playerInput _ Nothing = do
+playerInput _ Nothing = do   -- No strategy -> human user.
     input <- UI.getInput
     return $ case input of
         UI.Exit -> Nothing
         UI.ColSelected col -> Just col
-playerInput state (Just strat) = liftIO . fmap Just $ strat `runStrategy` state
+playerInput state (Just strat) = -- Run the strategy.
+    liftIO . fmap Just $ strat `runStrategy` state
 
 -- |Play a turn for a given player (i.e: read column and place piece).
 -- Returns False if user wants to close the application. True otherwise.
@@ -69,6 +68,7 @@ playTurn = do
     state <- get
     mcol  <- playerInput state mStrat
 
+    -- If a nothing is returned, it means the user wants to quit.
     if isNothing mcol then
         return False
     else
@@ -84,7 +84,7 @@ playTurn = do
             gsCurrentPlayer %= nextPlayer
             return True
 
--- |Function called when the game ends. Prints final board and winner.
+-- |Function called when the game ends. Shows final board and winner.
 gameOver :: Maybe Player -> GameMonad ()
 gameOver mwinner = do
     finalBoard <- use gsBoard
@@ -99,13 +99,6 @@ gameOver mwinner = do
                 uiHandle
         UI.cleanup uiHandle
 
-checkEnd :: GameMonad MatchState
-checkEnd = do
-    board <- use gsBoard
-    return $ case checkWinner board of
-        Nothing     -> if isFull board then Tie else NotEnd
-        Just winner -> Win winner
-
 -- |Loop of the game. This function repeats itself until there is a winner
 -- (or no more plays are possible).
 mainLoop :: GameMonad ()
@@ -113,10 +106,12 @@ mainLoop = do
     board <- use gsBoard
     uiHandle <- ask
 
+    -- Display current state of the board.
     UI.render board uiHandle
     notQuitted <- playTurn
     if notQuitted then do
-        matchSt <- checkEnd
+        newBoard <- use gsBoard
+        let matchSt = getMatchState newBoard
         case matchSt of
             NotEnd -> mainLoop
             Win w  -> gameOver $ Just w
