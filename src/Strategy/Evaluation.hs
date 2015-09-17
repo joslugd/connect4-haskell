@@ -70,8 +70,8 @@ winningRows pl board = tuple . winningRows' $ combs
                     (0, 0) -> zeroPair
                     -- More pieces = more value/risk. Promotes creating longer
                     -- chains.
-                    (a, 0) -> NumPair (a, 0)
-                    (0, b) -> NumPair (0, b)
+                    (a, 0) -> NumPair (1, 0)
+                    (0, b) -> NumPair (0, 1)
                     -- Anything else (i.e. there are pieces of both players)
                     -- is not valuable to neither player.
                     (_, _) -> zeroPair
