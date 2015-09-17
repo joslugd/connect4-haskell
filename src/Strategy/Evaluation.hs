@@ -80,7 +80,7 @@ winningRows pl board = tuple . winningRows' $ combs
                            | otherwise    = V.cons (V.take 4 row)
                                                    (groupsOfFour (V.tail row))
           -- Count the number of pieces of a given player in a vector.
-          howMany pi = V.length . V.filter (== Just pi)
+          howMany piece = V.length . V.filter (== Just piece)
 
 
 -- |The heuristic function, as pointed in the paper from
@@ -89,7 +89,7 @@ winningRows pl board = tuple . winningRows' $ combs
 -- for each of the players.
 -- The 'Int' parameters to this function are the coefficients for said linear
 -- combination.
-evaluate :: Piece -> Int -> Int -> Board -> Int
+evaluate :: Player -> Int -> Int -> Board -> Int
 evaluate pl plCoef opCoef board =
     case winningRows pl board of
         (winPl, winOp) -> plCoef * winPl + opCoef * winOp

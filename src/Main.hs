@@ -19,6 +19,7 @@ import Board
 import GameState
 import qualified UI.Graphics as UI
 import Strategy.Greedy
+import Strategy.Negamax
 
 -- |Type alias for the state monad used in this file.
 -- We will be using the state monad transformer so we can have a mutable game
@@ -40,7 +41,7 @@ playerStrategy pl = pick strategies
     where pick | pl == X = fst
                | pl == O = snd
           -- Define player strategies.
-          strategies = (Nothing, Just computerStrategy)
+          strategies = (Nothing, Just $ negamaxStrategy 4)
 
 -- |Reads player input using a 'GameStrategy' or reading from the user.
 playerInput :: GameState -> Maybe GameStrategy -> GameMonad (Maybe Int)

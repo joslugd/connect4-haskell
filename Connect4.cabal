@@ -27,6 +27,6 @@ executable Connect4
                        lens   ==4.12.3,
                        linear,
                        text, sdl2,
-                       random, mtl, transformers
+                       random, mtl, transformers, containers
   -- hs-source-dirs:      
   default-language:    Haskell2010
