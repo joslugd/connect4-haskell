@@ -5,6 +5,5 @@ A simple Connect 4 implementation in Haskell.
 
 ## TODO list
 
-* Optimize AI with alpha-beta pruning.
 * Try unit testing.
 * Add building instructions.

@@ -8,7 +8,7 @@ module Strategy.Negamax
 ) where
 
 import Control.Lens (view)
-import Data.List (maximumBy, zipWith4)
+import Data.List (maximumBy, sortBy, zipWith4)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
 import Data.Tree
@@ -39,9 +39,16 @@ genGameTree maxDepth = unfoldTree generatingFun
             let genNode col = do
                     newBoard <- putPiece player col board
                     return (newBoard, col)
+                -- Create a column ordering for the children nodes to be 
+                -- generated. Here, we want to prioritise the columns closer
+                -- to the center of the board, as these are the ones that are
+                -- more likely to be the best choices.
+                columnArrangement =
+                    sortBy (comparing (\col -> abs $ (boardCols `div` 2) - col))
+                         $ [0..boardCols-1]
                 -- Get lists of possible boards and used columns.
                 (possiblePlays, columns) = unzip $ mapMaybe genNode
-                                                   [0..boardCols-1]
+                                                   columnArrangement
                 newDepth = depth + 1
                 -- Generate childs of current node.
                 childNodes = if newDepth > maxDepth
@@ -50,7 +57,10 @@ genGameTree maxDepth = unfoldTree generatingFun
                                                  columns
                                                  (repeat $ nextPlayer player)
                                                  (repeat newDepth)
-            in  (node, childNodes)
+            in  case getMatchState board of
+                    Win _  -> (node, [])
+                    Tie    -> (node, [])
+                    NotEnd -> (node, childNodes)
 
 -- |Eval the game tree using the negamax algorithm, returning the best
 -- column selection for the current player.

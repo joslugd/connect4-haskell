@@ -41,7 +41,7 @@ playerStrategy pl = pick strategies
     where pick | pl == X = fst
                | pl == O = snd
           -- Define player strategies.
-          strategies = (Nothing, Just $ negamaxStrategy 4)
+          strategies = (Nothing, Just $ negamaxStrategy 5)
 
 -- |Reads player input using a 'GameStrategy' or reading from the user.
 playerInput :: GameState -> Maybe GameStrategy -> GameMonad (Maybe Int)
