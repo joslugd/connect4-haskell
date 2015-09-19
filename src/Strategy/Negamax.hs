@@ -7,6 +7,7 @@ module Strategy.Negamax
     negamaxStrategy
 ) where
 
+import Control.Lens (view)
 import Data.List (maximumBy, zipWith4)
 import Data.Maybe (mapMaybe)
 import Data.Ord (comparing)
@@ -25,9 +26,8 @@ data GameNode = GN { gnBoard  :: Board , gnColumn :: Int,
 -- |Generates the game tree up to a given depth ('maxDepth'). The 'Tree' data
 -- structure from the 'Data.Tree' package is lazy, which means that its nodes
 -- will be generated on demand as opposed to being generated at once.
--- As we will be using the Negamax algorithm to evaluate the tree, this
--- laziness doesn't make a difference (because it needs to visit the whole
--- tree) but it will help when we implement alpha-beta pruning.
+-- The alpha-beta pruning algorithm takes advantage of this by not visiting
+-- the pruned subtrees.
 genGameTree :: Int -> GameNode -> Tree GameNode
 genGameTree maxDepth = unfoldTree generatingFun
     where -- Function used to generate the nodes of the tree. The seed value is
@@ -56,17 +56,36 @@ genGameTree maxDepth = unfoldTree generatingFun
 -- column selection for the current player.
 evalGameTree :: Tree GameNode -> Int
 evalGameTree (Node _ childTrees) =
-        -- Takes every children, evaluates them and gets the column selection
-        -- for the one with the best rating.
-        gnColumn . snd . maximumBy (comparing fst) .
-        map (\subt -> (-(evalGameTree' subt), rootLabel subt)) $ childTrees
+        -- Takes children nodes and evaluates them using the negamax with
+        -- alpha-beta pruning optimisation, then take the column of the best
+        -- option.
+        snd . iterateChildren (-pseudoInf) pseudoInf ((-pseudoInf), 0)
+            $ childTrees
     where -- Leaf node. Return the evaluation of this node using the
           -- 'winning rows' method.
-          evalGameTree' (Node (GN board _ pl _) []) =
+          evalGameTree' (Node (GN board _ pl _) []) _ _ =
             evaluate pl 1 (-1) board
-          -- Internal node. Evaluate children and return the best rating.
-          evalGameTree' (Node _ childTrees) =
-            maximum . map (negate . evalGameTree') $ childTrees
+          -- Internal node. Evaluate children and get the best rating.
+          evalGameTree' (Node _ childTrees) alpha beta =
+            fst . iterateChildren alpha beta ((-pseudoInf), 0) $ childTrees
+          -- Evaluate children nodes using depth-first search.
+          -- No remaining children. Return the data of the best child
+          -- (rating and column).
+          iterateChildren alpha beta best [] = best
+          -- There are children remaining. Calculate new alpha value, new best
+          -- child and check pruning case.
+          iterateChildren alpha beta (bestRating, bestCol) (t:ts) =
+            let childValue = -(evalGameTree' t (-beta) (-alpha))
+                newBestRat = max bestRating childValue
+                newAlpha   = max alpha childValue
+                newBestCol = if newBestRat > bestRating 
+                                then gnColumn . rootLabel $ t
+                                else bestCol
+                newBest    = (newBestRat, newBestCol)
+            in  if newAlpha >= beta
+                    then newBest
+                    else iterateChildren newAlpha beta newBest ts
+          pseudoInf = 1000000
 
 -- |The exported strategy.
 negamaxStrategy :: Int -> GameStrategy
