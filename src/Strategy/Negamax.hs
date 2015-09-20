@@ -45,7 +45,7 @@ genGameTree maxDepth = unfoldTree generatingFun
                 -- more likely to be the best choices.
                 columnArrangement =
                     sortBy (comparing (\col -> abs $ (boardCols `div` 2) - col))
-                         $ [0..boardCols-1]
+                           [0..boardCols-1]
                 -- Get lists of possible boards and used columns.
                 (possiblePlays, columns) = unzip $ mapMaybe genNode
                                                    columnArrangement
@@ -69,7 +69,7 @@ evalGameTree (Node _ childTrees) =
         -- Takes children nodes and evaluates them using the negamax with
         -- alpha-beta pruning optimisation, then take the column of the best
         -- option.
-        snd . iterateChildren (-pseudoInf) pseudoInf ((-pseudoInf), 0)
+        snd . iterateChildren (-pseudoInf) pseudoInf (-pseudoInf, 0)
             $ childTrees
     where -- Leaf node. Return the evaluation of this node using the
           -- 'winning rows' method.
@@ -77,7 +77,7 @@ evalGameTree (Node _ childTrees) =
             evaluate pl 1 (-1) board
           -- Internal node. Evaluate children and get the best rating.
           evalGameTree' (Node _ childTrees) alpha beta =
-            fst . iterateChildren alpha beta ((-pseudoInf), 0) $ childTrees
+            fst . iterateChildren alpha beta (-pseudoInf, 0) $ childTrees
           -- Evaluate children nodes using depth-first search.
           -- No remaining children. Return the data of the best child
           -- (rating and column).
