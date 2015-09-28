@@ -52,7 +52,7 @@ boardHeight = boardRows * squareSize
 -- |Button width.
 buttonWidth = 192
 -- |Button height.
-buttonHeight = 64
+buttonHeight = 32
 -- |Width of contents of the window.
 windowWidth = squareSize * boardCols + 2*borderSize
 -- |Height of contents of the window.
@@ -89,6 +89,12 @@ initUI = do
     return $ GraphicsHandle window renderer texture
 
 
+-- | Function that creates a SDL rectangle given two tuples: (x0, y0) and
+-- (width, height). This allows to eliminate some boilerplate code when we
+-- create rectangles.
+mkRect :: Num a => (a, a) -> (a, a) -> Rectangle a
+mkRect (x0, y0) (w, h) = Rectangle (P (V2 x0 y0)) (V2 w h)
+
 -- |Wrapper around the 'copy' SDL function that converts the 'Rectangle's
 -- inner type from Int to CInt before calling the function.
 copy' :: MonadIO m =>
@@ -115,11 +121,11 @@ renderSame uih srcRect dstRect rows cols = do
           -- Increment a rectangle in the positive Y axis.
           incrementDstRow rect = case rect of
             Rectangle (P (V2 x y)) (V2 width height) ->
-                Rectangle (P (V2 x (y+height))) (V2 width height)
+                mkRect (x, y+height) (width, height)
           -- Increment a rectangle in the positive X axis.
           incrementDstCol rect = case rect of
             Rectangle (P (V2 x y)) (V2 width height) ->
-                Rectangle (P (V2 (x+width) y)) (V2 width height)
+                mkRect (x+width, y) (width, height)
 
 
 -- Render the border of the board.
@@ -159,11 +165,30 @@ renderBorder uiHandle = do
                        , (boardHeight `div` borderSize, 1) ]
           -- Converts from tuple to rectangle. Resulting rectangles have fixed
           -- (= borderSize) area.
-          toRectangle (x, y) = Rectangle (P (V2 x y)) (V2 borderSize borderSize)
+          toRectangle = (flip mkRect) (borderSize, borderSize)
           -- Maps from local tile coordinates to coordinates in the actual
           -- texture image.
           toTextureCoords (tileX, tileY) =
             (borderSize*tileX, srcSquareSize + borderSize*tileY)
+
+
+renderButtons :: MonadIO m => GraphicsHandle -> m ()
+renderButtons uiHandle = do
+    let renderer = ghRenderer uiHandle
+        texture = ghTexture uiHandle
+        srcRectRestartBut = mkRect (0, squareSize+3*borderSize)
+                                   (buttonWidth, buttonHeight)
+        dstRectRestartBut = mkRect ( windowWidth `div` 2 - buttonWidth
+                                   , windowHeight-buttonHeight )
+                                   (buttonWidth, buttonHeight)
+        srcRectExitBut = mkRect (0, squareSize+3*borderSize+buttonHeight)
+                                (buttonWidth, buttonHeight)
+        dstRectExitBut = mkRect ( windowWidth `div` 2
+                                , windowHeight-buttonHeight)
+                                (buttonWidth, buttonHeight)
+        buttonRects = zip [srcRectRestartBut, srcRectExitBut]
+                          [dstRectRestartBut, dstRectExitBut]
+    mapM_ (uncurry $ copy' renderer texture) buttonRects
 
 
 -- |Present the contents of the board to the window.
@@ -190,6 +215,8 @@ render board uiHandle = do
         copy' renderer texture srcRec dstRec
     -- Render the border of the board.
     renderBorder uiHandle
+    -- Render the buttons at the bottom.
+    renderButtons uiHandle
     -- Swap buffers, so what we have rendered is shown to the screen.
     present renderer
     where textureXCoord (Just X) = 0 * srcSquareSize
