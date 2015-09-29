@@ -46,7 +46,9 @@ playerStrategy pl = pick strategies
 -- |Reads player input using a 'GameStrategy' or reading from the user.
 playerInput :: GameState -> Maybe GameStrategy -> GameMonad (Maybe Int)
 playerInput _ Nothing = do   -- No strategy -> human user.
-    input <- UI.getInput
+    uiHandle <- ask
+    board <- use gsBoard
+    input <- UI.getInput board uiHandle
     return $ case input of
         UI.Exit -> Nothing
         UI.ColSelected col -> Just col

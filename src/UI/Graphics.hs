@@ -11,13 +11,17 @@ module UI.Graphics
     cleanup
 ) where
 
-import Control.Monad (join, forM_)
+import Control.Monad (join, liftM2, forM_)
 import Control.Monad.IO.Class
 import Data.List (zip3)
 import qualified Data.Text   as T
 import qualified Data.Vector as V
 import Foreign.C.Types (CInt)
+import Foreign.Marshal.Alloc (alloca)
+import Foreign.Ptr
+import Foreign.Storable (peek)
 import SDL
+import SDL.Raw.Video (glGetDrawableSize)
 import Linear (V2(..), V4(..))
 import Linear.Affine (Point(..))
 
@@ -26,9 +30,10 @@ import Board
 -- |Data type containing SDL data structures.
 data GraphicsHandle = GraphicsHandle
     {
-        ghWindow   :: Window,
-        ghRenderer :: Renderer,
-        ghTexture  :: Texture
+        ghWindow    :: Window,
+        ghRenderer  :: Renderer,
+        ghTexture   :: Texture,
+        ghTexture2x :: Texture
     }
 
 -- |Data type that represents a input from the user.
@@ -63,30 +68,38 @@ windowHeight = squareSize * boardRows + 2*borderSize + buttonHeight
 windowConfig :: WindowConfig
 windowConfig = WindowConfig
         True                -- Window border?
-        False               -- High DPI?
+        True                -- Allow high DPI?
         False               -- Window input grabbed?
         Windowed            -- Window mode.
         Nothing             -- OpenGL config.
         Wherever            -- Window pos.
-        False               -- Resizable?
+        True                -- Resizable?
         (V2 windowWidth windowHeight)  -- Window size.
 
 
 -- |Initialize the SDL subsystem and return a handle
 initUI :: MonadIO m => m GraphicsHandle
 initUI = do
-    -- Typical SDL initialization.
+    -- SDL initialization.
     initialize [InitEverything]
     window <- createWindow "Connect 4 Haskell" windowConfig
     renderer <- createRenderer window (-1) defaultRenderer
     rendererDrawColor renderer $= V4 0xFF 0xFF 0xFF 0x00
 
-    -- Create texture from BMP.
-    surfaceTexture <- loadBMP "assets/balls.bmp"
-    texture <- createTextureFromSurface renderer surfaceTexture
-    freeSurface surfaceTexture
+    -- Set logical size. Useful for resizing.
+    rendererLogicalSize renderer$= Just (V2 windowWidth
+                                            windowHeight)
 
-    return $ GraphicsHandle window renderer texture
+    -- Create texture from BMP.
+    texture   <- loadTexture renderer "assets/balls.bmp"
+    texture2x <- loadTexture renderer "assets/balls2x.bmp"
+
+    return $ GraphicsHandle window renderer texture texture2x
+    where loadTexture renderer path = do
+             surfaceTexture <- loadBMP path
+             texture <- createTextureFromSurface renderer surfaceTexture
+             freeSurface surfaceTexture
+             return texture
 
 
 -- | Function that creates a SDL rectangle given two tuples: (x0, y0) and
@@ -95,11 +108,21 @@ initUI = do
 mkRect :: Num a => (a, a) -> (a, a) -> Rectangle a
 mkRect (x0, y0) (w, h) = Rectangle (P (V2 x0 y0)) (V2 w h)
 
+{-
+getDrawableSize :: MonadIO m => GraphicsHandle -> m (Int, Int)
+getDrawableSize uiHandle =
+    liftIO $ alloca $ \widthPtr -> (alloca $ \heightPtr -> do
+        glGetDrawableSize (ghWindow uiHandle) widthPtr heightPtr
+        liftM2 (,) (fromPtr widthPtr) (fromPtr heightPtr)
+    )
+    where fromPtr = fmap fromIntegral . peek
+-}
+
 -- |Wrapper around the 'copy' SDL function that converts the 'Rectangle's
 -- inner type from Int to CInt before calling the function.
 copy' :: MonadIO m =>
             Renderer -> Texture -> Rectangle Int -> Rectangle Int -> m ()
-copy' renderer texture srcRec dstRec = 
+copy' renderer texture srcRec dstRec =
     copy renderer texture (Just . fmap fromIntegral $ srcRec)
                           (Just . fmap fromIntegral $ dstRec)
 
@@ -225,12 +248,15 @@ render board uiHandle = do
 
 
 -- |Gets input from user.
-getInput :: MonadIO m => m Input
-getInput = do
+getInput :: MonadIO m => Board -> GraphicsHandle -> m Input
+getInput board uiHandle = do
     event <- waitEvent
-    let mInput = handleEvent event
-    maybe getInput return mInput
+    mInput <- handleEvent event
+    case mInput of
+        Nothing    -> getInput board uiHandle
+        Just input -> return input
     where
+        renderer = ghRenderer uiHandle
         isQPressed kbdEvent =
             keyboardEventKeyMotion kbdEvent == Pressed &&
             keysymKeycode (keyboardEventKeysym kbdEvent) == KeycodeQ
@@ -247,20 +273,21 @@ getInput = do
             case mouseButtonEventPos mouseEvent of
                 P (V2 x _) -> (x - borderSize) `div` squareSize
         handleEvent ev = case eventPayload ev of
+            WindowResizedEvent _ -> render board uiHandle >> return Nothing
             -- 'Exit application' events.
             KeyboardEvent keyboardEvent ->
-                if isQPressed keyboardEvent then Just Exit
-                                            else Nothing
-            WindowClosedEvent _ -> Just Exit
-            QuitEvent -> Just Exit
+                return $ if isQPressed keyboardEvent then Just Exit
+                                                     else Nothing
+            WindowClosedEvent _ -> return $ Just Exit
+            QuitEvent -> return $ Just Exit
             -- 'Select column' events.
             MouseButtonEvent mouseEvent ->
-                if isLeftClickPressed mouseEvent then
-                    Just . ColSelected . fromIntegral . getPressedCol
-                        $ mouseEvent
-                else
-                    Nothing
-            _ -> Nothing
+                return $ if isLeftClickPressed mouseEvent then
+                            Just . ColSelected . fromIntegral . getPressedCol
+                            $ mouseEvent
+                         else
+                            Nothing
+            _ -> return Nothing
 
 
 -- |Shows a simple message in a dialog.
