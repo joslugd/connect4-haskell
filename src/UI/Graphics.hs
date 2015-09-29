@@ -11,8 +11,9 @@ module UI.Graphics
     cleanup
 ) where
 
-import Control.Monad (join, liftM2, forM_)
+import Control.Monad (join, liftM2, forM_, zipWithM_)
 import Control.Monad.IO.Class
+import Data.Function (on)
 import Data.List (zip3)
 import qualified Data.Text   as T
 import qualified Data.Vector as V
@@ -21,7 +22,9 @@ import Foreign.Marshal.Alloc (alloca)
 import Foreign.Ptr
 import Foreign.Storable (peek)
 import SDL
+import SDL.Internal.Types (Window(..))
 import SDL.Raw.Video (glGetDrawableSize)
+import System.Environment (setEnv)
 import Linear (V2(..), V4(..))
 import Linear.Affine (Point(..))
 
@@ -73,22 +76,31 @@ windowConfig = WindowConfig
         Windowed            -- Window mode.
         Nothing             -- OpenGL config.
         Wherever            -- Window pos.
-        True                -- Resizable?
+        False               -- Resizable?
         (V2 windowWidth windowHeight)  -- Window size.
 
 
 -- |Initialize the SDL subsystem and return a handle
 initUI :: MonadIO m => m GraphicsHandle
 initUI = do
+    -- Set some useful environment variables.
+    liftIO $ do
+        -- Set linear interpolation when rendering.
+        -- Setting the environment variable because I cannot get the API function 
+        -- that sets the hint to work.
+        setEnv "SDL_RENDER_SCALE_QUALITY" "1"
+        -- Also, disable fullscreen in OS X
+        setEnv "SDL_VIDEO_MAC_FULLSCREEN_SPACES" "0"
+
     -- SDL initialization.
     initialize [InitEverything]
+
     window <- createWindow "Connect 4 Haskell" windowConfig
     renderer <- createRenderer window (-1) defaultRenderer
     rendererDrawColor renderer $= V4 0xFF 0xFF 0xFF 0x00
 
     -- Set logical size. Useful for resizing.
-    rendererLogicalSize renderer$= Just (V2 windowWidth
-                                            windowHeight)
+    rendererLogicalSize renderer $= Just (V2 windowWidth windowHeight)
 
     -- Create texture from BMP.
     texture   <- loadTexture renderer "assets/balls.bmp"
@@ -108,26 +120,49 @@ initUI = do
 mkRect :: Num a => (a, a) -> (a, a) -> Rectangle a
 mkRect (x0, y0) (w, h) = Rectangle (P (V2 x0 y0)) (V2 w h)
 
-{-
+
+-- |Gets the size of the drawable contents of the window. This may differ
+-- from the window size in HiDPI screens.
 getDrawableSize :: MonadIO m => GraphicsHandle -> m (Int, Int)
 getDrawableSize uiHandle =
+    -- Since we are using SDL low level (raw) bindings, we have to do some
+    -- magic. We allocate two variables that will contain the results of
+    -- the 'glGetDrawableSize' call. Then, we extract the values of said
+    -- variables (represented as pointers) and return them in a tuple.
     liftIO $ alloca $ \widthPtr -> (alloca $ \heightPtr -> do
-        glGetDrawableSize (ghWindow uiHandle) widthPtr heightPtr
+        glGetDrawableSize windowPtr widthPtr heightPtr
         liftM2 (,) (fromPtr widthPtr) (fromPtr heightPtr)
     )
-    where fromPtr = fmap fromIntegral . peek
--}
+    where -- Unwrap the window type (returning a pointer to the Window data
+          -- structure in memory)
+          windowPtr = case ghWindow uiHandle of
+                        Window ptr -> ptr
+          -- Extract a value from pointer. The type of this is:
+          -- Num a, Integral b => Ptr a -> IO b
+          fromPtr = fmap fromIntegral . peek
+
 
 -- |Wrapper around the 'copy' SDL function that converts the 'Rectangle's
 -- inner type from Int to CInt before calling the function.
 copy' :: MonadIO m =>
-            Renderer -> Texture -> Rectangle Int -> Rectangle Int -> m ()
-copy' renderer texture srcRec dstRec =
-    copy renderer texture (Just . fmap fromIntegral $ srcRec)
+            GraphicsHandle -> Rectangle Int -> Rectangle Int -> m ()
+copy' uiHandle srcRec dstRec = do
+    let renderer  = ghRenderer uiHandle
+        texture   = ghTexture uiHandle
+        texture2x = ghTexture2x uiHandle
+    (drawableWidth, drawableHeight) <- getDrawableSize uiHandle
+    let gDiv = (/) `on` fromIntegral
+        scaleFactor = min (drawableWidth `gDiv` windowWidth)
+                          (drawableHeight `gDiv` windowHeight)
+        (usedTexture, srcScale) = if scaleFactor > 1.0
+                                     then (texture2x, 2)
+                                     else (texture, 1)
+    copy renderer usedTexture
+                          (Just . fmap ((*srcScale) . fromIntegral) $ srcRec)
                           (Just . fmap fromIntegral $ dstRec)
 
 
--- |Renders a block consisting of the same tile.
+-- |Renders a block consisting of the same source tile.
 renderSame :: MonadIO m
               => GraphicsHandle
               -> Rectangle Int -> Rectangle Int
@@ -138,10 +173,8 @@ renderSame uih srcRect dstRect rows cols = do
     let col = take rows $ iterate incrementDstRow dstRect
         dstRects = concat . take cols $ iterate (map incrementDstCol) col
     -- Map the drawing action to each rectangle.
-    forM_ dstRects $ \dstRect -> copy' renderer texture srcRect dstRect
-    where renderer = ghRenderer uih
-          texture  = ghTexture uih
-          -- Increment a rectangle in the positive Y axis.
+    forM_ dstRects $ \dstRect -> copy' uih srcRect dstRect
+    where  -- Increment a rectangle in the positive Y axis.
           incrementDstRow rect = case rect of
             Rectangle (P (V2 x y)) (V2 width height) ->
                 mkRect (x, y+height) (width, height)
@@ -154,16 +187,13 @@ renderSame uih srcRect dstRect rows cols = do
 -- Render the border of the board.
 renderBorder :: MonadIO m => GraphicsHandle -> m ()
 renderBorder uiHandle = do
-    let renderer = ghRenderer uiHandle
-        texture  = ghTexture uiHandle
     -- Edges.
     forM_ (zip3 borderSrcTiles dstInitialRects dstHowMany) $
         \(src, dst, counts) -> do
             let (howManyRows, howManyCols) = counts
             renderSame uiHandle src dst howManyRows howManyCols
     -- Corners.
-    forM_ (cornerSrcTiles `zip` cornerDstRects) $ \(src, dst) ->
-        copy' renderer texture src dst
+    zipWithM_ (copy' uiHandle) cornerSrcTiles cornerDstRects
     where -- top-left, bottom-left, top-right, bottom-right
           -- Here I use the applicative property of lists to save a few
           -- keystrokes.
@@ -195,10 +225,10 @@ renderBorder uiHandle = do
             (borderSize*tileX, srcSquareSize + borderSize*tileY)
 
 
+-- |Render the buttons at the bottom of the window.
 renderButtons :: MonadIO m => GraphicsHandle -> m ()
 renderButtons uiHandle = do
-    let renderer = ghRenderer uiHandle
-        texture = ghTexture uiHandle
+    let -- Calculate source and destination rects.
         srcRectRestartBut = mkRect (0, squareSize+3*borderSize)
                                    (buttonWidth, buttonHeight)
         dstRectRestartBut = mkRect ( windowWidth `div` 2 - buttonWidth
@@ -209,16 +239,14 @@ renderButtons uiHandle = do
         dstRectExitBut = mkRect ( windowWidth `div` 2
                                 , windowHeight-buttonHeight)
                                 (buttonWidth, buttonHeight)
-        buttonRects = zip [srcRectRestartBut, srcRectExitBut]
-                          [dstRectRestartBut, dstRectExitBut]
-    mapM_ (uncurry $ copy' renderer texture) buttonRects
+    zipWithM_ (copy' uiHandle) [srcRectRestartBut, srcRectExitBut]
+                               [dstRectRestartBut, dstRectExitBut]
 
 
 -- |Present the contents of the board to the window.
 render :: MonadIO m => Board -> GraphicsHandle -> m ()
 render board uiHandle = do
     let renderer = ghRenderer uiHandle
-        texture  = ghTexture uiHandle
     -- Set whole backbuffer to the background color (in our case, white)
     clear renderer
     -- We obtain a list of board coordinates along with their contents.
@@ -235,7 +263,7 @@ render board uiHandle = do
             srcRec = Rectangle (P (V2 (textureXCoord sq) 0))
                                (V2 srcSquareSize srcSquareSize)
         -- Do the rendering.
-        copy' renderer texture srcRec dstRec
+        copy' uiHandle srcRec dstRec
     -- Render the border of the board.
     renderBorder uiHandle
     -- Render the buttons at the bottom.
@@ -246,17 +274,26 @@ render board uiHandle = do
           textureXCoord (Just O) = 1 * srcSquareSize
           textureXCoord Nothing  = 2 * srcSquareSize
 
-
--- |Gets input from user.
-getInput :: MonadIO m => Board -> GraphicsHandle -> m Input
-getInput board uiHandle = do
-    event <- waitEvent
-    mInput <- handleEvent event
-    case mInput of
-        Nothing    -> getInput board uiHandle
-        Just input -> return input
+-- |Handle a SDL Event.
+handleEvent :: MonadIO m => Event -> Board -> GraphicsHandle -> m (Maybe Input)
+handleEvent ev board uiHandle = case eventPayload ev of
+    WindowResizedEvent _ -> render board uiHandle >> return Nothing
+    WindowMovedEvent _ -> render board uiHandle >> return Nothing
+    -- 'Exit application' events.
+    KeyboardEvent keyboardEvent ->
+        return $ if isQPressed keyboardEvent then Just Exit
+                                             else Nothing
+    WindowClosedEvent _ -> return $ Just Exit
+    QuitEvent -> return $ Just Exit
+    -- 'Select column' events.
+    MouseButtonEvent mouseEvent ->
+        return $ if isLeftClickPressed mouseEvent then
+                    Just . ColSelected . fromIntegral . getPressedCol
+                    $ mouseEvent
+                 else
+                    Nothing
+    _ -> return Nothing
     where
-        renderer = ghRenderer uiHandle
         isQPressed kbdEvent =
             keyboardEventKeyMotion kbdEvent == Pressed &&
             keysymKeycode (keyboardEventKeysym kbdEvent) == KeycodeQ
@@ -272,23 +309,15 @@ getInput board uiHandle = do
         getPressedCol mouseEvent =
             case mouseButtonEventPos mouseEvent of
                 P (V2 x _) -> (x - borderSize) `div` squareSize
-        handleEvent ev = case eventPayload ev of
-            WindowResizedEvent _ -> render board uiHandle >> return Nothing
-            -- 'Exit application' events.
-            KeyboardEvent keyboardEvent ->
-                return $ if isQPressed keyboardEvent then Just Exit
-                                                     else Nothing
-            WindowClosedEvent _ -> return $ Just Exit
-            QuitEvent -> return $ Just Exit
-            -- 'Select column' events.
-            MouseButtonEvent mouseEvent ->
-                return $ if isLeftClickPressed mouseEvent then
-                            Just . ColSelected . fromIntegral . getPressedCol
-                            $ mouseEvent
-                         else
-                            Nothing
-            _ -> return Nothing
 
+-- |Gets input from user.
+getInput :: MonadIO m => Board -> GraphicsHandle -> m Input
+getInput board uiHandle = do
+    event <- waitEvent
+    mInput <- handleEvent event board uiHandle
+    case mInput of
+        Nothing    -> getInput board uiHandle
+        Just input -> return input
 
 -- |Shows a simple message in a dialog.
 showMessageWindow :: MonadIO m => T.Text -> T.Text -> GraphicsHandle -> m ()
@@ -300,6 +329,7 @@ showMessageWindow title msg uiHandle =
 cleanup :: MonadIO m => GraphicsHandle -> m ()
 cleanup uiHandle = do
     destroyTexture $ ghTexture uiHandle
+    destroyTexture $ ghTexture2x uiHandle
     destroyRenderer $ ghRenderer uiHandle
     destroyWindow $ ghWindow uiHandle
     quit
