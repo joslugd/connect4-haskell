@@ -40,12 +40,12 @@ data GraphicsHandle = GraphicsHandle
     }
 
 -- |Data type that represents a input from the user.
-data Input = Exit | ColSelected Int deriving (Show)
+data Input = Exit | Restart | ColSelected Int deriving (Show)
 
 
 -- Define dimensions of the various GUI elements:
 squareSize, srcSquareSize, borderSize, boardWidth, boardHeight, buttonWidth,
-    buttonHeight, windowWidth, windowHeight :: Num a => a
+    buttonHeight, windowWidth, windowHeight :: Integral a => a
 
 -- |Width and height (in pixels) of each square in the window.
 squareSize    = 64
@@ -66,6 +66,51 @@ windowWidth = squareSize * boardCols + 2*borderSize
 -- |Height of contents of the window.
 windowHeight = squareSize * boardRows + 2*borderSize + buttonHeight
 
+-- Some auxiliary functions.
+-- | Function that creates a SDL rectangle given two tuples: (x0, y0) and
+-- (width, height). This allows to eliminate some boilerplate code when we
+-- create rectangles.
+mkRect :: Num a => (a, a) -> (a, a) -> Rectangle a
+mkRect (x0, y0) (w, h) = Rectangle (P (V2 x0 y0)) (V2 w h)
+
+
+-- |Gets the size of the drawable contents of the window. This may differ
+-- from the window size in HiDPI screens.
+getDrawableSize :: MonadIO m => GraphicsHandle -> m (Int, Int)
+getDrawableSize uiHandle =
+    -- Since we are using SDL low level (raw) bindings, we have to do some
+    -- magic. We allocate two variables that will contain the results of
+    -- the 'glGetDrawableSize' call. Then, we extract the values of said
+    -- variables (represented as pointers) and return them in a tuple.
+    liftIO $ alloca $ \widthPtr -> (alloca $ \heightPtr -> do
+        glGetDrawableSize windowPtr widthPtr heightPtr
+        liftM2 (,) (fromPtr widthPtr) (fromPtr heightPtr)
+    )
+    where -- Unwrap the window type (returning a pointer to the Window data
+          -- structure in memory)
+          windowPtr = case ghWindow uiHandle of
+                        Window ptr -> ptr
+          -- Extract a value from pointer. The type of this is:
+          -- Num a, Integral b => Ptr a -> IO b
+          fromPtr = fmap fromIntegral . peek
+
+
+-- |Checks whether a point is inside a rectangle.
+withinRect :: (Num a, Ord a) => Point V2 a -> Rectangle a -> Bool
+withinRect (P (V2 x y)) (Rectangle (P (V2 x0 y0)) (V2 w h)) =
+    and [ x0 < x, x < x0 + w, y0 < y, y < y0 + h ]
+
+-- Rects of the graphical elements
+boardRect, restartButtonRect, exitButtonRect :: Integral a => Rectangle a
+-- |Rect of the board.
+boardRect = mkRect (borderSize, borderSize) (boardWidth, boardHeight)
+-- |Rect of the restart button.
+restartButtonRect = mkRect ( windowWidth `div` 2 - buttonWidth
+                           , windowHeight - buttonHeight)
+                           (buttonWidth, buttonHeight)
+-- |Rect ot the exit button.
+exitButtonRect    = mkRect (windowWidth `div` 2, windowHeight - buttonHeight)
+                           (buttonWidth, buttonHeight)
 
 -- |Configuration for the SDL window.
 windowConfig :: WindowConfig
@@ -112,34 +157,6 @@ initUI = do
              texture <- createTextureFromSurface renderer surfaceTexture
              freeSurface surfaceTexture
              return texture
-
-
--- | Function that creates a SDL rectangle given two tuples: (x0, y0) and
--- (width, height). This allows to eliminate some boilerplate code when we
--- create rectangles.
-mkRect :: Num a => (a, a) -> (a, a) -> Rectangle a
-mkRect (x0, y0) (w, h) = Rectangle (P (V2 x0 y0)) (V2 w h)
-
-
--- |Gets the size of the drawable contents of the window. This may differ
--- from the window size in HiDPI screens.
-getDrawableSize :: MonadIO m => GraphicsHandle -> m (Int, Int)
-getDrawableSize uiHandle =
-    -- Since we are using SDL low level (raw) bindings, we have to do some
-    -- magic. We allocate two variables that will contain the results of
-    -- the 'glGetDrawableSize' call. Then, we extract the values of said
-    -- variables (represented as pointers) and return them in a tuple.
-    liftIO $ alloca $ \widthPtr -> (alloca $ \heightPtr -> do
-        glGetDrawableSize windowPtr widthPtr heightPtr
-        liftM2 (,) (fromPtr widthPtr) (fromPtr heightPtr)
-    )
-    where -- Unwrap the window type (returning a pointer to the Window data
-          -- structure in memory)
-          windowPtr = case ghWindow uiHandle of
-                        Window ptr -> ptr
-          -- Extract a value from pointer. The type of this is:
-          -- Num a, Integral b => Ptr a -> IO b
-          fromPtr = fmap fromIntegral . peek
 
 
 -- |Wrapper around the 'copy' SDL function that converts the 'Rectangle's
@@ -231,16 +248,10 @@ renderButtons uiHandle = do
     let -- Calculate source and destination rects.
         srcRectRestartBut = mkRect (0, squareSize+3*borderSize)
                                    (buttonWidth, buttonHeight)
-        dstRectRestartBut = mkRect ( windowWidth `div` 2 - buttonWidth
-                                   , windowHeight-buttonHeight )
-                                   (buttonWidth, buttonHeight)
         srcRectExitBut = mkRect (0, squareSize+3*borderSize+buttonHeight)
                                 (buttonWidth, buttonHeight)
-        dstRectExitBut = mkRect ( windowWidth `div` 2
-                                , windowHeight-buttonHeight)
-                                (buttonWidth, buttonHeight)
     zipWithM_ (copy' uiHandle) [srcRectRestartBut, srcRectExitBut]
-                               [dstRectRestartBut, dstRectExitBut]
+                               [restartButtonRect, exitButtonRect]
 
 
 -- |Present the contents of the board to the window.
@@ -285,11 +296,16 @@ handleEvent ev board uiHandle = case eventPayload ev of
                                              else Nothing
     WindowClosedEvent _ -> return $ Just Exit
     QuitEvent -> return $ Just Exit
-    -- 'Select column' events.
+    -- Mouse events
     MouseButtonEvent mouseEvent ->
         return $ if isLeftClickPressed mouseEvent then
-                    Just . ColSelected . fromIntegral . getPressedCol
-                    $ mouseEvent
+                    if withinBounds mouseEvent boardRect then
+                        Just . ColSelected . fromIntegral . getPressedCol
+                        $ mouseEvent
+                    else if withinBounds mouseEvent exitButtonRect then
+                        Just Exit
+                    else
+                        Nothing
                  else
                     Nothing
     _ -> return Nothing
@@ -299,13 +315,10 @@ handleEvent ev board uiHandle = case eventPayload ev of
             keysymKeycode (keyboardEventKeysym kbdEvent) == KeycodeQ
         isLeftClickPressed mouseEvent =
             mouseButtonEventButton mouseEvent == ButtonLeft &&
-            mouseButtonEventMotion mouseEvent == Pressed &&
-            withinBounds mouseEvent
-        withinBounds mouseEvent =
-            case mouseButtonEventPos mouseEvent of
-                P (V2 x y) -> 
-                    and [ x > borderSize, x <= (borderSize+boardWidth)
-                        , y > borderSize, y <= (borderSize+boardHeight) ]
+            mouseButtonEventMotion mouseEvent == Pressed
+        withinBounds mouseEvent rect =
+            let point = mouseButtonEventPos mouseEvent
+            in withinRect point rect
         getPressedCol mouseEvent =
             case mouseButtonEventPos mouseEvent of
                 P (V2 x _) -> (x - borderSize) `div` squareSize
