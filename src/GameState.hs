@@ -3,7 +3,7 @@
 module GameState
 (
     GameState (..),
-    gsBoard, gsStdGen, gsCurrentPlayer,
+    gsBoard, gsStdGen, gsCurrentPlayer, gsGameEnded,
     Column, GameStrategy, runStrategy
 ) where
 
@@ -28,7 +28,8 @@ runStrategy = runReaderT
 
 -- |Represents the state of the program at a particular time.
 data GameState = GameState { _gsBoard :: Board, _gsStdGen :: StdGen,
-                             _gsCurrentPlayer :: Player }
+                             _gsCurrentPlayer :: Player,
+                             _gsGameEnded :: Bool }
 -- Construct the lenses for the previously defined data structure. In layman
 -- terms, lenses are abstractions used in functional programming to simulate
 -- getters and setters in a composable, functional and convenient way. The

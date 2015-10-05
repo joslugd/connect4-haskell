@@ -81,7 +81,7 @@ evalGameTree (Node _ childTrees) =
           -- Evaluate children nodes using depth-first search.
           -- No remaining children. Return the data of the best child
           -- (rating and column).
-          iterateChildren alpha beta best [] = best
+          iterateChildren _     _    best [] = best
           -- There are children remaining. Calculate new alpha value, new best
           -- child and check pruning case.
           iterateChildren alpha beta (bestRating, bestCol) (t:ts) =

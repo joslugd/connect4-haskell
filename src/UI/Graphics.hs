@@ -7,6 +7,7 @@ module UI.Graphics
     initUI,
     render,
     getInput,
+    getPassiveInput,
     showMessageWindow,
     cleanup
 ) where
@@ -131,8 +132,8 @@ initUI = do
     -- Set some useful environment variables.
     liftIO $ do
         -- Set linear interpolation when rendering.
-        -- Setting the environment variable because I cannot get the API function 
-        -- that sets the hint to work.
+        -- Setting the environment variable because I cannot get the API
+        -- function that sets the hint to work.
         setEnv "SDL_RENDER_SCALE_QUALITY" "1"
         -- Also, disable fullscreen in OS X
         setEnv "SDL_VIDEO_MAC_FULLSCREEN_SPACES" "0"
@@ -304,6 +305,8 @@ handleEvent ev board uiHandle = case eventPayload ev of
                         $ mouseEvent
                     else if withinBounds mouseEvent exitButtonRect then
                         Just Exit
+                    else if withinBounds mouseEvent restartButtonRect then
+                        Just Restart
                     else
                         Nothing
                  else
@@ -324,13 +327,23 @@ handleEvent ev board uiHandle = case eventPayload ev of
                 P (V2 x _) -> (x - borderSize) `div` squareSize
 
 -- |Gets input from user.
-getInput :: MonadIO m => Board -> GraphicsHandle -> m Input
+getInput, getPassiveInput :: MonadIO m => Board -> GraphicsHandle -> m Input
 getInput board uiHandle = do
     event <- waitEvent
     mInput <- handleEvent event board uiHandle
     case mInput of
         Nothing    -> getInput board uiHandle
         Just input -> return input
+
+
+getPassiveInput board uiHandle = discardSelectedCols $ getInput board uiHandle
+    where
+        discardSelectedCols ioInput = do
+            input <- ioInput
+            case input of
+                ColSelected _ -> getPassiveInput board uiHandle
+                otherInput -> return otherInput
+
 
 -- |Shows a simple message in a dialog.
 showMessageWindow :: MonadIO m => T.Text -> T.Text -> GraphicsHandle -> m ()
