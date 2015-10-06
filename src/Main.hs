@@ -66,7 +66,7 @@ playerInput :: Maybe GameStrategy -> GameMonad (Either GameAction Int)
 playerInput Nothing = do   -- No strategy -> human user.
     uiHandle <- ask
     board <- use gsBoard
-    fmap fromUIInput $ UI.getInput board uiHandle
+    fromUIInput <$> UI.getInput board uiHandle
 playerInput (Just strat) = do -- Run the strategy.
     state <- get
     liftIO . fmap Right $ strat `runStrategy` state
@@ -107,8 +107,7 @@ gameOver mwinner = do
     UI.render finalBoard uiHandle
     -- Indicates that the game has ended, disabling interaction with the board.
     assign gsGameEnded True
-    liftIO $ do
-        UI.showMessageWindow "Game over"
+    liftIO $ UI.showMessageWindow "Game over"
                 (maybe "The game ended in a draw"
                        (T.append "The winner of the game is "
                              . T.pack . toColor )
@@ -121,12 +120,13 @@ gameOver mwinner = do
 mainLoop :: GameMonad ()
 mainLoop = do
     -- Display current state of the board.
-    render
+    doRender
 
     -- Check if game ended.
     hasMatchEnded <- use gsGameEnded
 
     if hasMatchEnded then do
+        -- If the match has ended, disable all interactions with the board
         board <- use gsBoard
         uiHandle <- ask
         action <- UI.getPassiveInput board uiHandle
@@ -134,10 +134,11 @@ mainLoop = do
             Left action -> runAction action
             Right _ -> error "ColSelected event is not expected now"
     else do
+        -- If the game is still ongoing, just play the next turn.
         eInput <- playTurn
         either runAction continueGame eInput
 
-    where render = do
+    where doRender = do
               board <- use gsBoard
               uiHandle <- ask
               UI.render board uiHandle
@@ -148,7 +149,7 @@ mainLoop = do
               stdGen <- use gsStdGen
               initState <- liftIO $ initialState (Just stdGen)
               put initState
-              render
+              doRender
               mainLoop
           continueGame () = do
               newBoard <- use gsBoard

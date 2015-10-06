@@ -12,7 +12,7 @@ module UI.Graphics
     cleanup
 ) where
 
-import Control.Monad (join, liftM2, forM_, zipWithM_)
+import Control.Monad (join, liftM2, forM_, guard, zipWithM_)
 import Control.Monad.IO.Class
 import Data.Function (on)
 import Data.List (zip3)
@@ -236,7 +236,7 @@ renderBorder uiHandle = do
                        , (boardHeight `div` borderSize, 1) ]
           -- Converts from tuple to rectangle. Resulting rectangles have fixed
           -- (= borderSize) area.
-          toRectangle = (flip mkRect) (borderSize, borderSize)
+          toRectangle = flip mkRect (borderSize, borderSize)
           -- Maps from local tile coordinates to coordinates in the actual
           -- texture image.
           toTextureCoords (tileX, tileY) =
@@ -286,6 +286,22 @@ render board uiHandle = do
           textureXCoord (Just O) = 1 * srcSquareSize
           textureXCoord Nothing  = 2 * srcSquareSize
 
+
+-- |Handle a left click event.
+handleClick :: MouseButtonEventData -> Maybe Input
+handleClick mouse
+    | withinBounds mouse boardRect = Just . ColSelected
+                                   . fromIntegral . getPressedCol $ mouse
+    | withinBounds mouse exitButtonRect    = Just Exit
+    | withinBounds mouse restartButtonRect = Just Restart
+    | otherwise = Nothing
+    where getPressedCol mouseEvent =  
+            case mouseButtonEventPos mouseEvent of
+                P (V2 x _) -> (x - borderSize) `div` squareSize
+          withinBounds mouseEvent rect =
+            let point = mouseButtonEventPos mouseEvent
+            in withinRect point rect
+
 -- |Handle a SDL Event.
 handleEvent :: MonadIO m => Event -> Board -> GraphicsHandle -> m (Maybe Input)
 handleEvent ev board uiHandle = case eventPayload ev of
@@ -299,18 +315,9 @@ handleEvent ev board uiHandle = case eventPayload ev of
     QuitEvent -> return $ Just Exit
     -- Mouse events
     MouseButtonEvent mouseEvent ->
-        return $ if isLeftClickPressed mouseEvent then
-                    if withinBounds mouseEvent boardRect then
-                        Just . ColSelected . fromIntegral . getPressedCol
-                        $ mouseEvent
-                    else if withinBounds mouseEvent exitButtonRect then
-                        Just Exit
-                    else if withinBounds mouseEvent restartButtonRect then
-                        Just Restart
-                    else
-                        Nothing
-                 else
-                    Nothing
+        return $ do
+            guard $ isLeftClickPressed mouseEvent
+            handleClick mouseEvent
     _ -> return Nothing
     where
         isQPressed kbdEvent =
@@ -319,12 +326,7 @@ handleEvent ev board uiHandle = case eventPayload ev of
         isLeftClickPressed mouseEvent =
             mouseButtonEventButton mouseEvent == ButtonLeft &&
             mouseButtonEventMotion mouseEvent == Pressed
-        withinBounds mouseEvent rect =
-            let point = mouseButtonEventPos mouseEvent
-            in withinRect point rect
-        getPressedCol mouseEvent =
-            case mouseButtonEventPos mouseEvent of
-                P (V2 x _) -> (x - borderSize) `div` squareSize
+
 
 -- |Gets input from user.
 getInput, getPassiveInput :: MonadIO m => Board -> GraphicsHandle -> m Input
@@ -335,7 +337,8 @@ getInput board uiHandle = do
         Nothing    -> getInput board uiHandle
         Just input -> return input
 
-
+-- |Gets input from the user, but discarding the ones regarding the board.
+-- That is, only close and restart are allowed.
 getPassiveInput board uiHandle = discardSelectedCols $ getInput board uiHandle
     where
         discardSelectedCols ioInput = do
