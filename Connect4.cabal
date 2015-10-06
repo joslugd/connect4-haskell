@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                Connect4
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            A simple Connect Four implementation written in Haskell.
 -- description:         
 license:             MIT
